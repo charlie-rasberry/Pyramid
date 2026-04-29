@@ -1,5 +1,5 @@
 // AsciiPyramid - DirectComposition build.
-// Strategy: create our own borderless full-screen HWND, parent it to WorkerW,
+// create a borderless full-screen HWND, parent it to WorkerW,
 // bind a DComp target to our window. This avoids the cross-process
 // E_ACCESSDENIED that hits when binding directly to WorkerW.
 
@@ -19,7 +19,7 @@
 #include <combaseapi.h>
 
 #pragma comment(lib, "ole32.lib")
-
+#pragma comment(linker, "/SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup") // Leave Commented out usually
 static constexpr int kBufferWidth  = 120;
 static constexpr int kBufferHeight = 40;
 
