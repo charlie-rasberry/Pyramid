@@ -27,7 +27,7 @@ public:
         wc.lpfnWndProc = DefWindowProcW;
         wc.hInstance = ::GetModuleHandleW(nullptr);
         wc.lpszClassName = ClassName();
-        wc.hCursor = ::LoadCursorW(nullptr, (LPCWSTR)IDC_ARROW);
+        wc.hCursor = ::LoadCursor(nullptr, IDC_ARROW);
         wc.hbrBackground = nullptr;
         ::RegisterClassExW(&wc); // ignore "already registered" errors
 

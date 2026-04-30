@@ -1,24 +1,19 @@
 #pragma once
-#include "../Engine/Matrix4.h"
-#include "../Engine/Mesh.h"
+
+// Pick a scene at compile time. To switch, change ACTIVE_SCENE below
+// (and rebuild). No runtime cost; the unused scene isn't even compiled in.
+
+#include "PrismScene.h"
+#include "PyramidScene.h"
+
+// Available scenes:
+//   PyramidScene   - rotating 3D ASCII pyramid (the original)
+//   PrismScene     - Pink Floyd-style prism with shimmering rainbow
+
+#define ACTIVE_SCENE PrismScene
+//#define ACTIVE_SCENE PyramidScene
+
 
 namespace App {
-
-class Scene {
-public:
-    Engine::Mesh pyramid = Engine::Mesh::CreatePyramid();
-    float rotation = 0.0f;
-
-    void Update(float dt) {
-        rotation += dt;
-    }
-
-    Engine::Matrix4 GetTransform() const {
-        Engine::Matrix4 ry = Engine::Matrix4::RotationY(rotation);
-        Engine::Matrix4 rx = Engine::Matrix4::RotationX(rotation * 0.5f);
-        Engine::Matrix4 t  = Engine::Matrix4::Translation(0, 0, -5);
-        return t.MultiplyMatrix(ry.MultiplyMatrix(rx));
-    }
-};
-
-} // namespace App
+    using ActiveScene = ACTIVE_SCENE;
+}

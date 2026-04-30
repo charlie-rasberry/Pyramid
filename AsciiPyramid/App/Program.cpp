@@ -1,9 +1,6 @@
 // AsciiPyramid - DirectComposition build.
-// create a borderless full-screen HWND, parent it to WorkerW,
-// bind a DComp target to our window. This avoids the cross-process
-// E_ACCESSDENIED that hits when binding directly to WorkerW.
+// The scene is picked at compile time in SceneSetup.h via ACTIVE_SCENE.
 
-#include "../Engine/Renderer.h"
 #include "../Platform/DcompRenderer.h"
 #include "../Platform/DesktopWindow.h"
 #include "../Platform/WorkerWManager.h"
@@ -11,7 +8,6 @@
 
 #include <chrono>
 #include <cstdio>
-//#include <thread>
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -19,9 +15,10 @@
 #include <combaseapi.h>
 
 #pragma comment(lib, "ole32.lib")
-#pragma comment(linker, "/SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup") // Leave Commented out usually
-static constexpr int kBufferWidth  = 120;
-static constexpr int kBufferHeight = 40;
+#pragma comment(linker, "/SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup") // for background usage.
+
+//static constexpr int kBufferWidth  = 120;  // was 120
+//static constexpr int kBufferHeight = 40;   // was 40
 
 static volatile bool g_running = true;
 
@@ -45,7 +42,7 @@ int main() {
 
     HWND workerW = Platform::WorkerWManager::GetWorkerW();
     if (!workerW) {
-        std::printf("Could not locate WorkerW. Is Explorer running?\n");
+        std::printf("Could not locate WorkerW.\n");
         return 1;
     }
     char cls[64] = {};
@@ -53,50 +50,35 @@ int main() {
     std::printf("[diag] WorkerW hwnd=%p class=%s\n", (void*)workerW, cls);
 
     Platform::DesktopWindow window;
-    if (!window.Create()) {
-        std::printf("DesktopWindow::Create failed.\n");
+    if (!window.Create() || !window.AttachToWorkerW(workerW)) {
+        std::printf("Window create/attach failed.\n");
         return 1;
     }
-    if (!window.AttachToWorkerW(workerW)) {
-        std::printf("AttachToWorkerW failed.\n");
-        return 1;
-    }
-    std::printf("[diag] our hwnd=%p parented to WorkerW. Size=%dx%d\n",
+    std::printf("[diag] hwnd=%p size=%dx%d\n",
                 (void*)window.hwnd, window.screenW, window.screenH);
 
     Platform::DcompRenderer dcomp;
-    if (!dcomp.Initialize(window.screenW, window.screenH)) {
-        std::printf("DComp init failed.\n");
+    if (!dcomp.Initialize(window.screenW, window.screenH) ||
+        !dcomp.BindToWindow(window.hwnd)) {
+        std::printf("DComp init/bind failed.\n");
         return 1;
     }
-    if (!dcomp.BindToWindow(window.hwnd)) {
-        std::printf("DComp BindToWindow failed.\n");
-        return 1;
-    }
-    std::printf("[diag] DComp bound. cell=%.1fx%.1f\n", dcomp.cellW, dcomp.cellH);
-
-    Engine::AsciiBuffer buffer(kBufferWidth, kBufferHeight);
-
-    Engine::Renderer engineRenderer;
-    float aspect = (float)kBufferWidth / (float)(kBufferHeight * 2);
-    engineRenderer.projection = Engine::Matrix4::Perspective(
-        60.0f * 3.14159265f / 180.0f, aspect, 0.1f, 100.0f);
-
-    App::Scene scene;
+    int bufW = (int)(window.screenW / dcomp.cellW);
+    int bufH = (int)(window.screenH / dcomp.cellH);
+    Engine::AsciiBuffer buffer(bufW, bufH);
+    App::ActiveScene scene;
+    scene.Init(bufW, bufH);
 
     auto last = std::chrono::high_resolution_clock::now();
-    const auto frameTime = std::chrono::milliseconds(16);
-
     uint64_t lastFrameHash = 0;
-
     int frames = 0;
+
     while (g_running) {
         auto now = std::chrono::high_resolution_clock::now();
         float dt = std::chrono::duration<float>(now - last).count();
         last = now;
 
         if (!window.IsTargetValid()) {
-            std::printf("[diag] target invalid; re-acquiring WorkerW\n");
             HWND fresh = Platform::WorkerWManager::GetWorkerW();
             if (fresh) {
                 window.AttachToWorkerW(fresh);
@@ -106,13 +88,12 @@ int main() {
 
         scene.Update(dt);
         buffer.Clear();
+        scene.Render(buffer);
 
-        engineRenderer.Render(scene.pyramid, scene.GetTransform(), buffer);
-        
-        uint64_t currentHash = buffer.Hash();
-        if (currentHash != lastFrameHash) {
+        uint64_t h = buffer.Hash();
+        if (h != lastFrameHash) {
             dcomp.Render(buffer);
-            lastFrameHash = currentHash;
+            lastFrameHash = h;
         }
 
         if (++frames % 120 == 0) {
@@ -125,8 +106,6 @@ int main() {
             ::TranslateMessage(&msg);
             ::DispatchMessage(&msg);
         }
-
-        //std::this_thread::sleep_for(frameTime);
     }
 
     if (HWND p = ::FindWindowA("Progman", nullptr)) {

@@ -41,20 +41,16 @@ public:
     }
 
     bool BindToWindow(HWND window) {
-        // 'topmost' arg is FALSE -- we don't want our visual to push above
-        // the rest of WorkerW's content, just sit on top of the wallpaper.
         HRESULT hr = dcompDevice->CreateTargetForHwnd(window, TRUE,
                                                       target.ReleaseAndGetAddressOf());
         if (FAILED(hr)) {
             std::printf("[diag] CreateTargetForHwnd failed: 0x%lX\n", (unsigned long)hr);
             return false;
         }
-
         hr = dcompDevice->CreateVisual(visual.ReleaseAndGetAddressOf());
         if (FAILED(hr)) return false;
         visual->SetContent(swapChain.Get());
         target->SetRoot(visual.Get());
-
         return SUCCEEDED(dcompDevice->Commit());
     }
 
@@ -66,58 +62,52 @@ public:
         float originX = (screenW - gridW) * 0.5f;
         float originY = (screenH - gridH) * 0.5f;
 
-        // The exact bounding box of our text grid
         D2D1_RECT_F textRect = {
-            originX,
-            originY,
-            originX + gridW,
-            originY + gridH + (buffer.height * 2.0f) // extra padding
+            originX, originY,
+            originX + gridW, originY + gridH + (buffer.height * 2.0f)
         };
 
         d2dRT->BeginDraw();
-
-        // This saves the GPU from filling the entire 1080p/4K background with black.
-        // doesn't render redundant space
         d2dRT->PushAxisAlignedClip(&textRect, D2D1_ANTIALIAS_MODE_ALIASED);
-        d2dRT->Clear(D2D1::ColorF(0, 0, 0, 0.0f)); // 0 0 0 1 = opaque
+        d2dRT->Clear(D2D1::ColorF(0, 0, 0, 0.0f));  // transparent
 
-        // Build one single string with line breaks
-        std::wstring fullGrid;
-        fullGrid.reserve(buffer.height * (buffer.width + 1));
-        
-        for (int y = 0; y < buffer.height; ++y) {
-            for (int x = 0; x < buffer.width; ++x) {
-                fullGrid.push_back((wchar_t)(unsigned char)buffer.chars[y * buffer.width + x]);
+        // Group cells by color. For each color in use, build a grid string
+        // where cells of that color show their character and all others
+        // are spaces. One DrawText per color.
+        const int total = buffer.width * buffer.height;
+        std::wstring gridStr;
+        gridStr.reserve(total + buffer.height);
+
+        for (uint8_t cIdx = 0; cIdx < Engine::Color::Count; ++cIdx) {
+            // Skip color groups with no cells.
+            bool any = false;
+            for (int i = 0; i < total; ++i) {
+                if (buffer.color[i] == cIdx && buffer.chars[i] != ' ') {
+                    any = true; break;
+                }
             }
-            fullGrid.push_back(L'\n'); 
+            if (!any) continue;
+
+            gridStr.clear();
+            for (int y = 0; y < buffer.height; ++y) {
+                for (int x = 0; x < buffer.width; ++x) {
+                    int i = y * buffer.width + x;
+                    char ch = (buffer.color[i] == cIdx) ? buffer.chars[i] : ' ';
+                    gridStr.push_back((wchar_t)(unsigned char)ch);
+                }
+                gridStr.push_back(L'\n');
+            }
+
+            d2dRT->DrawText(gridStr.c_str(), (UINT32)gridStr.size(),
+                            textFormat.Get(), textRect, brushes[cIdx].Get(),
+                            D2D1_DRAW_TEXT_OPTIONS_CLIP);
         }
-        D2D1_RECT_F r = {
-            originX,
-            originY,
-            originX + gridW,
-            originY + gridH + (buffer.height * 2.0f) // extra padding
-        };
-        d2dRT->DrawText(fullGrid.c_str(), (UINT32)fullGrid.size(), //DrawTextW
-                         textFormat.Get(), r, textBrush.Get(),
-                         D2D1_DRAW_TEXT_OPTIONS_CLIP);
 
-        d2dRT->PopAxisAlignedClip(); 
+        d2dRT->PopAxisAlignedClip();
+        d2dRT->EndDraw();
 
-        HRESULT hr = d2dRT->EndDraw();
-
-        /**
-        RECT dirty = {
-            std::max(0L, (LONG)(textRect.left - 2.0f)),
-            std::max(0L, (LONG)(textRect.top - 2.0f)),
-            std::min((LONG)screenW, (LONG)(textRect.right + 2.0f)),
-            std::min((LONG)screenH, (LONG)(textRect.bottom + 2.0f))
-        };
-        **/
         DXGI_PRESENT_PARAMETERS pp = {};
-        //pp.DirtyRectsCount = 1;
-        //pp.pDirtyRects = &dirty;
-
-        swapChain->Present1(1, 0, &pp); // 1 = 60fps 2 = 30 3 = 20 Old params => 
+        swapChain->Present1(2, 0, &pp);
         dcompDevice->Commit();
     }
 
@@ -131,7 +121,7 @@ private:
     ComPtr<ID2D1Factory1>          d2dFactory;
     ComPtr<ID2D1Device>            d2dDevice;
     ComPtr<ID2D1DeviceContext>     d2dRT;
-    ComPtr<ID2D1SolidColorBrush>   textBrush;
+    ComPtr<ID2D1SolidColorBrush>   brushes[Engine::Color::Count];
 
     ComPtr<IDWriteFactory>         dwriteFactory;
     ComPtr<IDWriteTextFormat>      textFormat;
@@ -182,25 +172,16 @@ private:
 
         HRESULT hr = dxgiFactory->CreateSwapChainForComposition(
             dxgiDevice.Get(), &d, nullptr, swapChain.GetAddressOf());
-        if (FAILED(hr)) {
-            std::printf("[diag] CreateSwapChainForComposition failed: 0x%lX\n",
-                        (unsigned long)hr);
-        }
         return SUCCEEDED(hr);
     }
 
     bool CreateD2D() {
         D2D1_FACTORY_OPTIONS opts = {};
-        HRESULT hr = ::D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED,
-                                         __uuidof(ID2D1Factory1), &opts, &d2dFactory);
-        if (FAILED(hr)) return false;
-
-        hr = d2dFactory->CreateDevice(dxgiDevice.Get(), d2dDevice.GetAddressOf());
-        if (FAILED(hr)) return false;
-
-        hr = d2dDevice->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE,
-                                            d2dRT.GetAddressOf());
-        if (FAILED(hr)) return false;
+        if (FAILED(::D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED,
+                                       __uuidof(ID2D1Factory1), &opts, &d2dFactory))) return false;
+        if (FAILED(d2dFactory->CreateDevice(dxgiDevice.Get(), d2dDevice.GetAddressOf()))) return false;
+        if (FAILED(d2dDevice->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE,
+                                                  d2dRT.GetAddressOf()))) return false;
 
         ComPtr<IDXGISurface> surface;
         if (FAILED(swapChain->GetBuffer(0, IID_PPV_ARGS(&surface)))) return false;
@@ -215,8 +196,22 @@ private:
             return false;
         d2dRT->SetTarget(bitmap.Get());
 
-        D2D1_COLOR_F green = D2D1::ColorF(0.0f, 1.0f, 0.47f, 1.0f);
-        return SUCCEEDED(d2dRT->CreateSolidColorBrush(green, textBrush.GetAddressOf()));
+        // Palette: 8 brushes matching Engine::Color::* indices.
+        const D2D1_COLOR_F palette[Engine::Color::Count] = {
+            D2D1::ColorF(0.00f, 1.00f, 0.47f, 1.0f),  // Default (green)
+            D2D1::ColorF(1.00f, 1.00f, 1.00f, 1.0f),  // White
+            D2D1::ColorF(1.00f, 0.20f, 0.20f, 1.0f),  // Red
+            D2D1::ColorF(1.00f, 0.55f, 0.10f, 1.0f),  // Orange
+            D2D1::ColorF(1.00f, 0.95f, 0.20f, 1.0f),  // Yellow
+            D2D1::ColorF(0.20f, 0.95f, 0.30f, 1.0f),  // Green
+            D2D1::ColorF(0.20f, 0.55f, 1.00f, 1.0f),  // Blue
+            D2D1::ColorF(0.70f, 0.30f, 1.00f, 1.0f),  // Violet
+        };
+        for (int i = 0; i < Engine::Color::Count; ++i) {
+            if (FAILED(d2dRT->CreateSolidColorBrush(palette[i], brushes[i].GetAddressOf())))
+                return false;
+        }
+        return true;
     }
 
     bool CreateDWrite() {
@@ -226,6 +221,10 @@ private:
         if (FAILED(hr)) return false;
 
         const float fontSize = 18.0f;
+        // Compute cell metrics BEFORE applying SetLineSpacing.
+        cellW = fontSize * 0.55f;
+        cellH = fontSize * 1.20f;
+
         hr = dwriteFactory->CreateTextFormat(
             L"Consolas", nullptr, DWRITE_FONT_WEIGHT_BOLD,
             DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
@@ -235,11 +234,8 @@ private:
         textFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
         textFormat->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
         textFormat->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
-
-        cellW = fontSize * 0.55f;
-        cellH = fontSize * 1.20f;
         textFormat->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM, cellH, cellH * 0.8f);
-        
+
         return true;
     }
 
@@ -247,10 +243,6 @@ private:
         HRESULT hr = ::DCompositionCreateDevice(
             dxgiDevice.Get(), __uuidof(IDCompositionDevice),
             reinterpret_cast<void**>(dcompDevice.GetAddressOf()));
-        if (FAILED(hr)) {
-            std::printf("[diag] DCompositionCreateDevice failed: 0x%lX\n",
-                        (unsigned long)hr);
-        }
         return SUCCEEDED(hr);
     }
 };
