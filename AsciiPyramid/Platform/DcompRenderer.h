@@ -66,35 +66,58 @@ public:
         float originX = (screenW - gridW) * 0.5f;
         float originY = (screenH - gridH) * 0.5f;
 
-        d2dRT->BeginDraw();
-        d2dRT->Clear(D2D1::ColorF(0, 0, 0, 1.0f));
+        // The exact bounding box of our text grid
+        D2D1_RECT_F textRect = {
+            originX,
+            originY,
+            originX + gridW,
+            originY + gridH + (buffer.height * 2.0f) // extra padding
+        };
 
-        std::wstring row;
-        row.resize(buffer.width);
+        d2dRT->BeginDraw();
+
+        // This saves the GPU from filling the entire 1080p/4K background with black.
+        // doesn't render redundant space
+        d2dRT->PushAxisAlignedClip(&textRect, D2D1_ANTIALIAS_MODE_ALIASED);
+        d2dRT->Clear(D2D1::ColorF(0, 0, 0, 0.0f)); // 0 0 0 1 = opaque
+
+        // Build one single string with line breaks
+        std::wstring fullGrid;
+        fullGrid.reserve(buffer.height * (buffer.width + 1));
+        
         for (int y = 0; y < buffer.height; ++y) {
             for (int x = 0; x < buffer.width; ++x) {
-                row[x] = (wchar_t)(unsigned char)buffer.chars[y * buffer.width + x];
+                fullGrid.push_back((wchar_t)(unsigned char)buffer.chars[y * buffer.width + x]);
             }
-            D2D1_RECT_F r = {
-                originX,
-                originY + y * cellH,
-                originX + gridW,
-                originY + (y + 1) * cellH + 2.0f
-            };
-            // DrawTextW
-            d2dRT->DrawText(row.c_str(), (UINT32)row.size(),
-                             textFormat.Get(), r, textBrush.Get(),
-                             D2D1_DRAW_TEXT_OPTIONS_CLIP);
+            fullGrid.push_back(L'\n'); 
         }
+        D2D1_RECT_F r = {
+            originX,
+            originY,
+            originX + gridW,
+            originY + gridH + (buffer.height * 2.0f) // extra padding
+        };
+        d2dRT->DrawText(fullGrid.c_str(), (UINT32)fullGrid.size(), //DrawTextW
+                         textFormat.Get(), r, textBrush.Get(),
+                         D2D1_DRAW_TEXT_OPTIONS_CLIP);
+
+        d2dRT->PopAxisAlignedClip(); 
 
         HRESULT hr = d2dRT->EndDraw();
-        if (FAILED(hr)) {
-            std::printf("[diag] D2D EndDraw failed: 0x%lX\n", (unsigned long)hr);
-            return;
-        }
 
+        /**
+        RECT dirty = {
+            std::max(0L, (LONG)(textRect.left - 2.0f)),
+            std::max(0L, (LONG)(textRect.top - 2.0f)),
+            std::min((LONG)screenW, (LONG)(textRect.right + 2.0f)),
+            std::min((LONG)screenH, (LONG)(textRect.bottom + 2.0f))
+        };
+        **/
         DXGI_PRESENT_PARAMETERS pp = {};
-        swapChain->Present1(1, 0, &pp);
+        //pp.DirtyRectsCount = 1;
+        //pp.pDirtyRects = &dirty;
+
+        swapChain->Present1(1, 0, &pp); // 1 = 60fps 2 = 30 3 = 20 Old params => 
         dcompDevice->Commit();
     }
 
@@ -215,6 +238,8 @@ private:
 
         cellW = fontSize * 0.55f;
         cellH = fontSize * 1.20f;
+        textFormat->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM, cellH, cellH * 0.8f);
+        
         return true;
     }
 

@@ -1,0 +1,4 @@
+*.bat
+*.obj
+.vs/
+/TODO.md

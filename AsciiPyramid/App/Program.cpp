@@ -11,7 +11,7 @@
 
 #include <chrono>
 #include <cstdio>
-#include <thread>
+//#include <thread>
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -87,6 +87,8 @@ int main() {
     auto last = std::chrono::high_resolution_clock::now();
     const auto frameTime = std::chrono::milliseconds(16);
 
+    uint64_t lastFrameHash = 0;
+
     int frames = 0;
     while (g_running) {
         auto now = std::chrono::high_resolution_clock::now();
@@ -104,8 +106,14 @@ int main() {
 
         scene.Update(dt);
         buffer.Clear();
+
         engineRenderer.Render(scene.pyramid, scene.GetTransform(), buffer);
-        dcomp.Render(buffer);
+        
+        uint64_t currentHash = buffer.Hash();
+        if (currentHash != lastFrameHash) {
+            dcomp.Render(buffer);
+            lastFrameHash = currentHash;
+        }
 
         if (++frames % 120 == 0) {
             std::printf("[diag] %d frames\n", frames);
@@ -118,7 +126,7 @@ int main() {
             ::DispatchMessage(&msg);
         }
 
-        std::this_thread::sleep_for(frameTime);
+        //std::this_thread::sleep_for(frameTime);
     }
 
     if (HWND p = ::FindWindowA("Progman", nullptr)) {

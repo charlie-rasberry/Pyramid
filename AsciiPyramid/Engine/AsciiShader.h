@@ -2,6 +2,7 @@
 #include <limits>
 #include <string>
 #include <vector>
+#include <cstdint>
 
 namespace Engine {
 
@@ -29,6 +30,13 @@ public:
             chars[i] = c;
         }
     }
+
+    uint64_t Hash() const {
+        uint64_t h = 1469598103934665603ull;
+        for (char c : chars) { h ^= (uint8_t)c; h *= 1099511628211ull; }
+            return h;
+    }
+
 };
 
 class AsciiShader {
