@@ -9,7 +9,7 @@
 
 namespace App {
 
-// Pink Floyd "Dark Side of the Moon" album cover, ASCII edition.
+// "Dark Side of the Moon" album cover, ASCII edition.
 // White beam from the left, dark prism in the middle, rainbow fanning to the
 // lower right. Rainbow shimmers; prism wobbles slightly.
 class PrismScene : public IScene {
@@ -88,7 +88,7 @@ public:
         }
 
         // 4. Prism outline last so it overdraws any rainbow that strayed inside.
-        DrawLine(buffer, ax, ay, bx, by,   '/', Engine::Color::White);
+        DrawLine(buffer, ax, ay, bx, by,   '/', Engine::Color::White); // *flickers* not sure to call it a bug
         DrawLine(buffer, bx, by, cx2, cy2, '_', Engine::Color::White);
         DrawLine(buffer, cx2, cy2, ax, ay, '\\', Engine::Color::White);
     }

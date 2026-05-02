@@ -3,8 +3,6 @@
 
 namespace App {
 
-// Every scene fills an AsciiBuffer. That's it. Scenes are free to depend on
-// whatever Engine pieces they need (or none).
 class IScene {
 public:
     virtual ~IScene() = default;

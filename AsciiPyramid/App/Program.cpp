@@ -89,11 +89,14 @@ int main() {
         scene.Update(dt);
         buffer.Clear();
         scene.Render(buffer);
+        //dcomp.Render(buffer);
 
         uint64_t h = buffer.Hash();
         if (h != lastFrameHash) {
             dcomp.Render(buffer);
             lastFrameHash = h;
+        } else {
+            ::Sleep(8);
         }
 
         if (++frames % 120 == 0) {
